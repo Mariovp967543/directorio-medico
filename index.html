@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Directorio Médico</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b6e6e'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/directorio.css">
+  <style>html, body { margin: 0; background: #f6f8f8; } @media (prefers-color-scheme: dark) { html, body { background: #0e1515; } }</style>
+</head>
+<body>
+  <!--
+    DIRECTORIO MÉDICO — se publica en GitHub Pages y se muestra en la intranet con un <iframe>.
+    Los datos (data/directorio.enc) están cifrados con AES-256-GCM. La llave NO está en GitHub:
+    la trae el iframe de la intranet después de "#k=":
+
+      <iframe src="https://USUARIO.github.io/REPO/#k=LLAVE_DE_64_CARACTERES" ...></iframe>
+
+    Lo que va después de "#" nunca se envía a ningún servidor. Sin llave, la página la pide.
+  -->
+  <div id="directorio-medico"></div>
+  <script>window.DIRECTORIO_CONFIG = { ingresoManual: true, titulo: "Directorio Médico" };</script>
+  <script src="assets/directorio.js"></script>
+</body>
+</html>

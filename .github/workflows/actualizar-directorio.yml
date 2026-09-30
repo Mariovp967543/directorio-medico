@@ -1,0 +1,129 @@
+# ==========================================================================
+#  Directorio Médico — actualización automática (gratis, sin PC encendida)
+#
+#  Quién lo dispara:
+#    • Power Automate (lo normal): un flujo con su cuenta de Microsoft 365 corre todos los días,
+#      pide a SharePoint enlaces temporales de las matrices y envía el evento
+#      "actualizar-directorio" con esos enlaces. Ver POWER_AUTOMATE.md.
+#    • Botón "Run workflow" o un push: solo vuelve a publicar el sitio con los datos que ya hay.
+#    • (Opcional) Si algún día TI da una aplicación de Entra ID, con los secretos AZURE_* también
+#      puede descargar por su cuenta en "Run workflow".
+#
+#  Secretos (Settings → Secrets and variables → Actions → Secrets):
+#    DIRECTORIO_KEY   llave AES-256 (64 hex). La misma del iframe de la intranet.
+# ==========================================================================
+name: Actualizar directorio
+
+on:
+  repository_dispatch:
+    types: [actualizar-directorio]
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths-ignore: ["README.md", "POWER_AUTOMATE.md"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actualizar-directorio
+  cancel-in-progress: false
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write          # solo para hacer commit de data/directorio.enc
+    env:
+      # enlaces = viene de Power Automate · graph = aplicación de Entra ID · no = solo publicar
+      MODO: ${{ github.event_name == 'repository_dispatch' && 'enlaces' || (secrets.AZURE_CLIENT_ID != '' && github.event_name == 'workflow_dispatch' && 'graph' || 'no') }}
+    steps:
+      - name: Obtener el repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        if: env.MODO != 'no'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependencias
+        if: env.MODO != 'no'
+        run: pip install -r scripts/requirements.txt
+
+      # Los enlaces se leen del archivo del evento dentro del script (no por variables de
+      # entorno, que GitHub muestra en los registros) y se ocultan con ::add-mask::.
+      - name: Descargar matrices (enlaces de Power Automate)
+        if: env.MODO == 'enlaces'
+        run: python scripts/descargar_enlaces.py --destino "$RUNNER_TEMP/matrices"
+
+      - name: Descargar matrices (aplicación de Entra ID)
+        if: env.MODO == 'graph'
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SP_HOST: ${{ vars.SP_HOST }}
+          SP_SITE_PATH: ${{ vars.SP_SITE_PATH }}
+          SP_ARCHIVO: ${{ vars.SP_ARCHIVO }}
+        run: python scripts/descargar_sharepoint.py --destino "$RUNNER_TEMP/matrices"
+
+      - name: Limpiar, comprimir y cifrar
+        if: env.MODO != 'no'
+        env:
+          DIRECTORIO_KEY: ${{ secrets.DIRECTORIO_KEY }}
+        run: python -W ignore scripts/generar_datos.py --origen "$RUNNER_TEMP/matrices"
+
+      - name: Borrar las matrices descargadas
+        if: always() && env.MODO != 'no'
+        run: rm -rf "$RUNNER_TEMP/matrices"
+
+      - name: Verificar que no haya datos en claro
+        run: |
+          if git ls-files --others --cached --exclude-standard -- 'data/*.json' 'data/*.js' '*.xlsx' '*.xlsm' '*.csv' | grep .; then
+            echo "::error::Se encontraron archivos en claro que se subirían al repositorio."; exit 1
+          fi
+
+      - name: Publicar si hubo cambios
+        if: env.MODO != 'no'
+        run: |
+          git add data/directorio.enc
+          if git diff --cached --quiet; then
+            echo "Sin cambios en los datos."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Actualiza directorio ($(TZ=America/Costa_Rica date '+%Y-%m-%d %H:%M'))"
+          git push
+
+  # Publica el sitio en GitHub Pages (Settings → Pages → Source: "GitHub Actions").
+  # Se hace aquí porque los commits del bot no disparan otros workflows.
+  desplegar:
+    needs: actualizar
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main                    # incluye el commit que acaba de hacer el paso anterior
+      - name: Armar el sitio (solo archivos públicos o cifrados)
+        run: |
+          mkdir -p _sitio/data
+          cp -r index.html .nojekyll assets _sitio/
+          if [ ! -f data/directorio.enc ]; then echo "::error::Aún no existe data/directorio.enc (corra primero el flujo de Power Automate)"; exit 1; fi
+          cp data/directorio.enc _sitio/data/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _sitio
+      - id: deploy
+        uses: actions/deploy-pages@v4

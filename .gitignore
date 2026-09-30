@@ -1,0 +1,17 @@
+# ======== NUNCA subir datos en claro ========
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+data/*.json
+data/*.js
+!data/directorio.enc
+~$*
+# Llaves (por si alguien las copia al repo por error)
+llave*.txt
+*.key
+.env
+# Varios
+__pycache__/
+.DS_Store
+Thumbs.db
